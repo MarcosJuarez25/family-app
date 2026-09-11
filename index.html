@@ -61,6 +61,7 @@ if('serviceWorker' in navigator){
   --c-ahorro:#207840;
   --c-otros:#51535b;
   --c-ingreso:#16794a;
+  --c-tarjeta:#6b3fa0;
 
   --shadow-1: 0 1px 2px rgba(20,30,24,.06);
   --shadow-2: 0 1px 1px rgba(20,30,24,.04), 0 4px 10px rgba(20,30,24,.07), 0 14px 28px -8px rgba(20,30,24,.10);
@@ -103,6 +104,7 @@ if('serviceWorker' in navigator){
     --c-ahorro:#30a65b;
     --c-otros:#7e8494;
     --c-ingreso:#33d17e;
+    --c-tarjeta:#a97ee0;
 
     --shadow-1: 0 1px 2px rgba(0,0,0,.3);
     --shadow-2: 0 1px 1px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.35), 0 16px 32px -10px rgba(0,0,0,.5);
@@ -138,6 +140,7 @@ if('serviceWorker' in navigator){
   --c-ahorro:#30a65b;
   --c-otros:#7e8494;
   --c-ingreso:#33d17e;
+  --c-tarjeta:#a97ee0;
 
   --shadow-1: 0 1px 2px rgba(0,0,0,.3);
   --shadow-2: 0 1px 1px rgba(0,0,0,.3), 0 4px 12px rgba(0,0,0,.35), 0 16px 32px -10px rgba(0,0,0,.5);
@@ -318,6 +321,31 @@ button{font-family:inherit;}
   opacity:.35; border-radius:1px;
 }
 .empty-note{padding:26px 18px; text-align:center; color:var(--ink-faint); font-size:13.5px;}
+
+/* card installments (tarjeta) */
+.card-installments-list{display:flex; flex-direction:column; gap:14px; padding:18px;}
+.card-row{display:flex; flex-direction:column; gap:6px; cursor:default;}
+.card-row-top{display:flex; align-items:center; justify-content:space-between; gap:8px;}
+.card-row-name{font-weight:600; font-size:14px; color:var(--ink); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex:1 1 auto;}
+.card-row-badge{
+  font-family:var(--font-mono); font-weight:700; font-size:12px; color:var(--accent-ink);
+  background:var(--c-tarjeta); border-radius:20px; padding:2px 10px; flex:none;
+}
+.card-row.done .card-row-badge{background:var(--good);}
+.card-row.done .card-row-name{color:var(--ink-faint); text-decoration:line-through;}
+.card-row-meta{font-size:11.5px; color:var(--ink-faint); font-family:var(--font-mono); display:flex; align-items:center; justify-content:space-between; gap:8px;}
+.card-row-del{
+  width:22px; height:22px; border-radius:50%; border:none; background:var(--surface-2); color:var(--ink-faint);
+  cursor:pointer; display:flex; align-items:center; justify-content:center; flex:none; font-size:14px;
+}
+.card-row-del:hover{color:var(--critical);}
+.btn-add-card{
+  display:block; width:100%; margin:10px 18px 18px; padding:11px; width:calc(100% - 36px);
+  border-radius:var(--radius-md); border:1.5px dashed color-mix(in srgb, var(--c-tarjeta) 55%, var(--line));
+  background:var(--surface); color:var(--c-tarjeta); font-weight:600; font-size:13.5px; cursor:pointer; font-family:inherit;
+}
+.btn-add-card:hover{ background:color-mix(in srgb, var(--c-tarjeta) 8%, var(--surface)); }
+.chip.chip-installment{border-color:color-mix(in srgb, var(--c-tarjeta) 45%, var(--line));}
 .btn-load-more{
   display:block; width:100%; margin-top:10px; padding:12px;
   border-radius:var(--radius-md); border:1px solid var(--line); background:var(--surface);
@@ -556,6 +584,17 @@ button{font-family:inherit;}
     </div>
   </div>
 
+  <div class="section" id="card-installments-section">
+    <div class="section-head">
+      <div class="section-title">Tarjetas</div>
+      <div class="section-sub">compras en cuotas</div>
+    </div>
+    <div class="card">
+      <div class="card-installments-list" id="card-installments-list"></div>
+      <button type="button" class="btn-add-card" id="btn-add-card">+ Nueva compra en cuotas</button>
+    </div>
+  </div>
+
   <div class="section" id="cat-breakdown-section">
     <div class="section-head">
       <div class="section-title">Gastos por categoría</div>
@@ -668,6 +707,56 @@ button{font-family:inherit;}
   <div class="helptext" style="margin-top:6px;">Esta app la comparten vos y tu pareja a través de este mismo link — cualquier cambio se sincroniza al instante en los dos celulares.</div>
 </div>
 
+<!-- New card installment plan sheet -->
+<div class="sheet" id="sheet-card">
+  <div class="sheet-grabber"></div>
+  <div class="sheet-head">
+    <div class="sheet-title">Nueva compra en cuotas</div>
+    <button class="icon-btn" id="btn-close-card" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="field-label">Descripción</div>
+  <input class="text-input" id="input-card-desc" type="text" placeholder="Ej: Heladera, Notebook...">
+
+  <div class="field-label">Monto por cuota</div>
+  <div class="amount-input-wrap">
+    <span class="amount-currency">$</span>
+    <input class="amount-input" id="input-card-amount" inputmode="decimal" placeholder="0" type="text">
+  </div>
+
+  <div class="field-label">Cantidad de cuotas</div>
+  <input class="text-input" id="input-card-total" type="number" min="1" inputmode="numeric" placeholder="Ej: 6">
+
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-save-card" style="width:100%;">Guardar</button>
+  </div>
+</div>
+
+<!-- Pay one installment sheet -->
+<div class="sheet" id="sheet-pay-installment">
+  <div class="sheet-grabber"></div>
+  <div class="sheet-head">
+    <div class="sheet-title">Pagar cuota</div>
+    <button class="icon-btn" id="btn-close-pay-installment" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div id="pay-installment-info" style="margin-bottom:6px;"></div>
+
+  <div class="field-label">Quién paga</div>
+  <div class="author-row" id="pay-installment-author-row"></div>
+
+  <div class="field-label">Fecha</div>
+  <input class="text-input" id="input-pay-installment-date" type="date">
+
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-confirm-pay-installment" style="width:100%;">Confirmar pago</button>
+  </div>
+</div>
+
 <!-- First-run: who am I on this device -->
 <div class="onboard" id="onboard" style="display:none;">
   <div class="onboard-card">
@@ -756,7 +845,7 @@ function subscribeToPush(silent){
 }
 
 /* ---------- defaults ---------- */
-var KNOWN_GASTO_IDS = ["comida","hijo","personales","combustible","vehiculo","vivienda","salud","entretenimiento","ahorro","otros"];
+var KNOWN_GASTO_IDS = ["comida","hijo","personales","combustible","vehiculo","vivienda","salud","entretenimiento","ahorro","otros","tarjeta"];
 
 function defaultSettings(){
   return {
@@ -785,6 +874,7 @@ function defaultSettings(){
 var db = null;
 var settings = null;
 var allTx = [];
+var cardInstallments = [];
 var selectedMonth = ymKey(new Date());
 var TX_PAGE_SIZE = 20;
 var txListLimit = TX_PAGE_SIZE;
@@ -823,6 +913,7 @@ function findCat(kind, id){
   return null;
 }
 function catLabel(kind, id){
+  if(kind === "gasto" && id === "tarjeta") return "Tarjeta";
   var c = findCat(kind, id);
   return c ? c.label : "Otros";
 }
@@ -935,8 +1026,60 @@ function makeTransactionsCollection(){
   return api;
 }
 
+function cardFromRow(row){
+  return {
+    id: row.id,
+    description: row.description,
+    totalInstallments: row.total_installments,
+    paidInstallments: row.paid_installments,
+    installmentAmount: Number(row.installment_amount),
+    author: row.author,
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : 0
+  };
+}
+
+function makeCardInstallmentsCollection(){
+  var listeners = [];
+  function fetchAndNotify(){
+    sb.from("card_installments").select("*").order("created_at", {ascending:true}).then(function(res){
+      if(res.error){ listeners.forEach(function(l){ if(l.err) l.err(res.error); }); return; }
+      var docs = (res.data||[]).map(function(row){
+        var item = cardFromRow(row);
+        return { id: row.id, exists:true, data:function(){ return item; } };
+      });
+      var snap = { docs: docs };
+      listeners.forEach(function(l){ l.cb(snap); });
+    });
+  }
+  sb.channel("card_installments_changes")
+    .on("postgres_changes", {event:"*", schema:"public", table:"card_installments"}, fetchAndNotify)
+    .subscribe();
+  var api = {
+    onSnapshot: function(cb, err){ listeners.push({cb:cb, err:err}); fetchAndNotify(); return function(){}; },
+    add: function(data){
+      var row = { description:data.description, installment_amount:data.installmentAmount, total_installments:data.totalInstallments, paid_installments:0, author:data.author };
+      return sb.from("card_installments").insert(row).then(function(res){ if(res.error) throw res.error; });
+    },
+    doc: function(id){
+      return {
+        incrementPaid: function(){
+          return sb.from("card_installments").select("paid_installments").eq("id", id).maybeSingle().then(function(res){
+            if(res.error) throw res.error;
+            var next = (res.data ? res.data.paid_installments : 0) + 1;
+            return sb.from("card_installments").update({paid_installments: next}).eq("id", id);
+          }).then(function(res){ if(res && res.error) throw res.error; });
+        },
+        delete: function(){
+          return sb.from("card_installments").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; });
+        }
+      };
+    }
+  };
+  return api;
+}
+
 /* ---------- db ---------- */
-var settingsDocApi = null, txCollectionApi = null;
+var settingsDocApi = null, txCollectionApi = null, cardCollectionApi = null;
 async function initDb(){
   if(!sb){
     document.getElementById("app").innerHTML = '<div style="padding:60px 20px; text-align:center; color:var(--ink-muted); font-size:14px; line-height:1.6;">No se pudo conectar con el almacenamiento de esta página.<br>Probá recargarla en unos segundos.</div>';
@@ -944,9 +1087,14 @@ async function initDb(){
   }
   settingsDocApi = makeSettingsDoc();
   txCollectionApi = makeTransactionsCollection();
+  cardCollectionApi = makeCardInstallmentsCollection();
   db = {
     doc: function(path){ return path === "settings/config" ? settingsDocApi : null; },
-    collection: function(name){ return name === "transactions" ? txCollectionApi : null; }
+    collection: function(name){
+      if(name === "transactions") return txCollectionApi;
+      if(name === "card_installments") return cardCollectionApi;
+      return null;
+    }
   };
 
   db.doc("settings/config").onSnapshot(function(snap){
@@ -977,6 +1125,11 @@ async function initDb(){
     allTx = snap.docs.map(function(d){ var o = d.data() || {}; o.id = d.id; return o; });
     renderAll();
   }, function(err){ console.error("tx error", err); });
+
+  db.collection("card_installments").onSnapshot(function(snap){
+    cardInstallments = snap.docs.map(function(d){ return d.data(); });
+    renderAll();
+  }, function(err){ console.error("card_installments error", err); });
 }
 
 var __shortcutHandled = false;
@@ -1042,6 +1195,7 @@ function renderAll(){
   renderHero(mtx);
   renderQuickGastoChips();
   renderQuickIngresoChips();
+  renderCardInstallments();
   renderCatBreakdown(mtx);
   renderTrend();
   renderTxList(mtx);
@@ -1090,6 +1244,14 @@ function renderQuickGastoChips(){
     var colorVar = catColorVar("gasto", c.id);
     chip.innerHTML = '<span class="dot" style="background:'+colorVar+'">'+escapeHtml(catInitial(c.label))+'</span>'+escapeHtml(c.label);
     chip.addEventListener("click", function(){ openAddSheet(c.id, "gasto"); });
+    wrap.appendChild(chip);
+  });
+  cardInstallments.filter(function(c){ return c.paidInstallments < c.totalInstallments; }).forEach(function(c){
+    var chip = document.createElement("div");
+    chip.className = "chip chip-installment";
+    var chipLabel = c.description + " " + c.paidInstallments + "/" + c.totalInstallments;
+    chip.innerHTML = '<span class="dot" style="background:var(--c-tarjeta)">'+escapeHtml(catInitial(c.description))+'</span>'+escapeHtml(chipLabel);
+    chip.addEventListener("click", function(){ openPayInstallmentSheet(c); });
     wrap.appendChild(chip);
   });
   renderAddCategoryChip(wrap, function(label){
@@ -1181,6 +1343,49 @@ function renderSpark(mtx){
     '<circle cx="'+pts[pts.length-1][0].toFixed(1)+'" cy="'+pts[pts.length-1][1].toFixed(1)+'" r="3" fill="'+color+'"/>';
 }
 
+/* ---------- card installments (tarjeta) ---------- */
+function renderCardInstallments(){
+  var list = document.getElementById("card-installments-list");
+  if(!list) return;
+  if(cardInstallments.length === 0){
+    list.innerHTML = '<div class="empty-note">Todavía no cargaste compras en cuotas.</div>';
+    return;
+  }
+  var sorted = cardInstallments.slice().sort(function(a,b){
+    var aDone = a.paidInstallments >= a.totalInstallments;
+    var bDone = b.paidInstallments >= b.totalInstallments;
+    if(aDone !== bDone) return aDone ? 1 : -1;
+    return (b.createdAt||0) - (a.createdAt||0);
+  });
+  list.innerHTML = sorted.map(function(c){
+    var done = c.paidInstallments >= c.totalInstallments;
+    var pct = Math.min(100, Math.round((c.paidInstallments / c.totalInstallments) * 100));
+    var remaining = Math.max(0, c.totalInstallments - c.paidInstallments);
+    return (
+      '<div class="card-row'+(done?" done":"")+'" data-id="'+c.id+'">' +
+        '<div class="card-row-top">' +
+          '<div class="card-row-name">'+escapeHtml(c.description)+'</div>' +
+          '<div class="card-row-badge">'+c.paidInstallments+'/'+c.totalInstallments+'</div>' +
+        '</div>' +
+        '<div class="bar-track"><div class="bar-fill" style="width:'+pct+'%; background:var(--c-tarjeta)"></div></div>' +
+        '<div class="card-row-meta">' +
+          '<span>' + (done ? "Pagada por completo" : fmt(c.installmentAmount)+" por cuota · quedan "+remaining) + '</span>' +
+          '<button type="button" class="card-row-del" data-id="'+c.id+'" aria-label="Eliminar">&times;</button>' +
+        '</div>' +
+      '</div>'
+    );
+  }).join("");
+  list.querySelectorAll(".card-row-del").forEach(function(btn){
+    btn.addEventListener("click", function(e){
+      e.stopPropagation();
+      var id = btn.dataset.id;
+      if(window.confirm("¿Eliminar esta compra en cuotas? No se borran los gastos ya cargados.")){
+        db.collection("card_installments").doc(id).delete().catch(function(err){ console.error(err); });
+      }
+    });
+  });
+}
+
 /* ---------- category breakdown ---------- */
 function renderCatBreakdown(mtx){
   var list = document.getElementById("cat-list");
@@ -1192,6 +1397,10 @@ function renderCatBreakdown(mtx){
   var rows = (settings.gastoCategories||[]).map(function(c){
     return {id:c.id, label:c.label, budget:c.budget||0, amount: totals[c.id]||0};
   }).filter(function(r){ return r.amount > 0 || r.budget > 0; });
+
+  if(totals.tarjeta > 0){
+    rows.push({id:"tarjeta", label:"Tarjeta", budget:0, amount: totals.tarjeta});
+  }
 
   rows.sort(function(a,b){ return b.amount - a.amount; });
 
@@ -1406,6 +1615,8 @@ function renderTxList(mtx){
 var scrim = document.getElementById("scrim");
 var sheetTx = document.getElementById("sheet-tx");
 var sheetSettings = document.getElementById("sheet-settings");
+var sheetCard = document.getElementById("sheet-card");
+var sheetPayInstallment = document.getElementById("sheet-pay-installment");
 
 function openSheet(sheet){
   scrim.classList.add("show");
@@ -1415,6 +1626,8 @@ function closeSheets(){
   scrim.classList.remove("show");
   sheetTx.classList.remove("show");
   sheetSettings.classList.remove("show");
+  sheetCard.classList.remove("show");
+  sheetPayInstallment.classList.remove("show");
 }
 scrim.addEventListener("click", closeSheets);
 
@@ -1504,6 +1717,70 @@ function openEditSheet(tx){
 
 document.getElementById("btn-add").addEventListener("click", openAddSheet);
 document.getElementById("btn-close-tx").addEventListener("click", closeSheets);
+
+/* ---------- new card installment plan sheet ---------- */
+function openNewCardSheet(){
+  document.getElementById("input-card-desc").value = "";
+  document.getElementById("input-card-amount").value = "";
+  document.getElementById("input-card-total").value = "";
+  openSheet(sheetCard);
+  setTimeout(function(){ document.getElementById("input-card-desc").focus(); }, 250);
+}
+document.getElementById("btn-add-card").addEventListener("click", openNewCardSheet);
+document.getElementById("btn-close-card").addEventListener("click", closeSheets);
+document.getElementById("input-card-amount").addEventListener("input", function(e){
+  var v = e.target.value.replace(/[^0-9.,]/g, "");
+  e.target.value = v;
+});
+document.getElementById("btn-save-card").addEventListener("click", function(){
+  var desc = document.getElementById("input-card-desc").value.trim();
+  var rawAmount = document.getElementById("input-card-amount").value.replace(",", ".");
+  var amount = parseFloat(rawAmount);
+  var total = parseInt(document.getElementById("input-card-total").value, 10);
+  if(!desc){ flashInvalid("input-card-desc"); return; }
+  if(!amount || amount <= 0){ flashInvalid("input-card-amount"); return; }
+  if(!total || total <= 0){ flashInvalid("input-card-total"); return; }
+  db.collection("card_installments").add({
+    description: desc,
+    installmentAmount: amount,
+    totalInstallments: total,
+    author: selectedAuthor || (settings.authors||[])[0]
+  }).catch(function(err){ console.error(err); });
+  closeSheets();
+});
+
+/* ---------- pay one installment sheet ---------- */
+var payingInstallment = null;
+function openPayInstallmentSheet(c){
+  payingInstallment = c;
+  document.getElementById("pay-installment-info").innerHTML =
+    '<div style="font-weight:600; font-size:16px; margin-bottom:4px;">'+escapeHtml(c.description)+'</div>' +
+    '<div style="color:var(--ink-muted); font-size:13.5px;">Cuota '+(c.paidInstallments+1)+' de '+c.totalInstallments+' · '+fmt(c.installmentAmount)+'</div>';
+  document.getElementById("input-pay-installment-date").value = todayISO();
+  if(!selectedAuthor) selectedAuthor = (settings.authors||[])[0];
+  renderAuthorRow("pay-installment-author-row");
+  openSheet(sheetPayInstallment);
+}
+document.getElementById("btn-close-pay-installment").addEventListener("click", closeSheets);
+document.getElementById("btn-confirm-pay-installment").addEventListener("click", function(){
+  if(!payingInstallment) return;
+  var c = payingInstallment;
+  var date = document.getElementById("input-pay-installment-date").value || todayISO();
+  var data = {
+    type: "gasto",
+    categoryId: "tarjeta",
+    amount: c.installmentAmount,
+    author: selectedAuthor || (settings.authors||[])[0],
+    note: c.description + " (cuota " + (c.paidInstallments+1) + "/" + c.totalInstallments + ")",
+    date: date,
+    createdAt: Date.now()
+  };
+  db.collection("transactions").add(data).catch(function(err){ console.error(err); });
+  db.collection("card_installments").doc(c.id).incrementPaid().catch(function(err){ console.error(err); });
+  playCoinSound();
+  payingInstallment = null;
+  closeSheets();
+});
 
 document.getElementById("input-amount").addEventListener("input", function(e){
   var v = e.target.value.replace(/[^0-9.,]/g, "");
