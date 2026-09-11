@@ -536,6 +536,16 @@ button{font-family:inherit;}
     </div>
   </div>
 
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Ingreso</div>
+      <div class="section-sub">tocá una categoría para cargarlo</div>
+    </div>
+    <div class="card">
+      <div class="chip-grid" id="quick-ingreso-chips" style="padding:16px;"></div>
+    </div>
+  </div>
+
   <div class="section" id="cat-breakdown-section">
     <div class="section-head">
       <div class="section-title">Gastos por categoría</div>
@@ -885,12 +895,28 @@ async function initDb(){
     }
     maybeShowOnboard();
     renderAll();
+    handleShortcutAction();
   }, function(err){ console.error("settings error", err); });
 
   db.collection("transactions").orderBy("date", "desc").limit(1000).onSnapshot(function(snap){
     allTx = snap.docs.map(function(d){ var o = d.data() || {}; o.id = d.id; return o; });
     renderAll();
   }, function(err){ console.error("tx error", err); });
+}
+
+var __shortcutHandled = false;
+function handleShortcutAction(){
+  if(__shortcutHandled) return;
+  __shortcutHandled = true;
+  try{
+    var params = new URLSearchParams(location.search);
+    var action = params.get("action");
+    if(action === "gasto" || action === "ingreso"){
+      openAddSheet(null, action);
+      var url = location.pathname;
+      history.replaceState(null, "", url);
+    }
+  }catch(e){}
 }
 
 function saveSettings(){
@@ -938,6 +964,7 @@ function renderAll(){
   var mtx = monthTx(selectedMonth);
   renderHero(mtx);
   renderQuickGastoChips();
+  renderQuickIngresoChips();
   renderCatBreakdown(mtx);
   renderTrend();
   renderTxList(mtx);
@@ -985,7 +1012,7 @@ function renderQuickGastoChips(){
     chip.className = "chip";
     var colorVar = catColorVar("gasto", c.id);
     chip.innerHTML = '<span class="dot" style="background:'+colorVar+'">'+escapeHtml(catInitial(c.label))+'</span>'+escapeHtml(c.label);
-    chip.addEventListener("click", function(){ openAddSheet(c.id); });
+    chip.addEventListener("click", function(){ openAddSheet(c.id, "gasto"); });
     wrap.appendChild(chip);
   });
   renderAddCategoryChip(wrap, function(label){
@@ -993,6 +1020,27 @@ function renderQuickGastoChips(){
     settings.gastoCategories.push({id:id, label:label, budget:0});
     saveSettings();
     renderQuickGastoChips();
+  });
+}
+
+/* ---------- home quick-add ingreso chips ---------- */
+function renderQuickIngresoChips(){
+  var wrap = document.getElementById("quick-ingreso-chips");
+  if(!wrap) return;
+  wrap.innerHTML = "";
+  (settings.ingresoCategories||[]).forEach(function(c){
+    var chip = document.createElement("div");
+    chip.className = "chip";
+    var colorVar = catColorVar("ingreso", c.id);
+    chip.innerHTML = '<span class="dot" style="background:'+colorVar+'">'+escapeHtml(catInitial(c.label))+'</span>'+escapeHtml(c.label);
+    chip.addEventListener("click", function(){ openAddSheet(c.id, "ingreso"); });
+    wrap.appendChild(chip);
+  });
+  renderAddCategoryChip(wrap, function(label){
+    var id = slugId("i", label);
+    settings.ingresoCategories.push({id:id, label:label});
+    saveSettings();
+    renderQuickIngresoChips();
   });
 }
 
@@ -1329,10 +1377,10 @@ function renderAuthorRow(containerId, onPick){
   });
 }
 
-function openAddSheet(presetCatId){
+function openAddSheet(presetCatId, presetType){
   editingTxId = null;
-  currentType = "gasto";
-  selectedCatId = presetCatId || null;
+  currentType = presetType || "gasto";
+  selectedCatId = (presetCatId && typeof presetCatId === "string") ? presetCatId : null;
   document.getElementById("tx-sheet-title").textContent = "Nuevo movimiento";
   document.getElementById("btn-delete-tx").style.display = "none";
   document.getElementById("input-amount").value = "";
@@ -1370,6 +1418,33 @@ document.getElementById("input-amount").addEventListener("input", function(e){
   e.target.value = v;
 });
 
+/* ---------- quick save sound ---------- */
+function playCoinSound(){
+  try{
+    var Ctx = window.AudioContext || window.webkitAudioContext;
+    if(!Ctx) return;
+    if(!window.__coinAudioCtx) window.__coinAudioCtx = new Ctx();
+    var ctx = window.__coinAudioCtx;
+    if(ctx.state === "suspended") ctx.resume();
+    var now = ctx.currentTime;
+    var freqs = [988, 1568];
+    freqs.forEach(function(freq, i){
+      var osc = ctx.createOscillator();
+      var gain = ctx.createGain();
+      osc.type = "sine";
+      osc.frequency.value = freq;
+      var start = now + i * 0.055;
+      gain.gain.setValueAtTime(0, start);
+      gain.gain.linearRampToValueAtTime(0.16, start + 0.008);
+      gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.16);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(start);
+      osc.stop(start + 0.2);
+    });
+  }catch(e){}
+}
+
 document.getElementById("btn-save-tx").addEventListener("click", function(){
   var raw = document.getElementById("input-amount").value.replace(",", ".");
   var amount = parseFloat(raw);
@@ -1391,6 +1466,7 @@ document.getElementById("btn-save-tx").addEventListener("click", function(){
     data.createdAt = Date.now();
     db.collection("transactions").add(data).catch(function(err){ console.error(err); });
   }
+  playCoinSound();
   closeSheets();
 });
 
