@@ -23,7 +23,7 @@ self.addEventListener("push", function(event) {
   var options = {
     body: data.body || "Hay un nuevo movimiento",
     icon: "./icon-192.png",
-    badge: "./icon-192.png",
+    badge: "./badge-96.png",
     tag: "family-app-update",
     renotify: true,
     data: { url: data.url || "./" }
