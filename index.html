@@ -485,6 +485,21 @@ body.no-scroll{overflow:hidden;}
 .chip .dot{width:18px; height:18px; border-radius:6px; display:flex; align-items:center; justify-content:center; color:#fff; font-family:var(--font-display); font-size:9.5px; font-weight:700;}
 .chip.active{border-color:var(--ink); color:var(--ink); box-shadow:var(--shadow-1);}
 .chip.add-new{color:var(--accent); border-style:dashed; border-color:color-mix(in srgb, var(--accent) 55%, var(--line));}
+.chip-edit-btn{
+  width:20px; height:20px; border-radius:50%; border:none; background:transparent;
+  color:var(--ink-faint); display:flex; align-items:center; justify-content:center;
+  cursor:pointer; flex:none; margin-left:1px; padding:0;
+}
+.chip-edit-btn:hover{ color:var(--ink); background:var(--surface-2); }
+.chip-edit-btn svg{width:12px; height:12px;}
+.chip-edit-form{display:flex; align-items:center; gap:6px;}
+.chip-edit-form .inline-add-input{width:132px;}
+.chip-edit-del{
+  width:32px; height:32px; border-radius:50%; border:none; flex:none;
+  background:var(--surface-2); color:var(--critical); cursor:pointer; font-size:16px;
+  display:flex; align-items:center; justify-content:center;
+}
+.chip-edit-del:hover{ background:color-mix(in srgb, var(--critical) 15%, var(--surface-2)); }
 
 .text-input, select.text-input{
   width:100%; padding:11px 13px; border-radius:11px; border:1.5px solid var(--line);
@@ -1263,6 +1278,75 @@ function renderAll(){
 
 /* ---------- inline "add category" control (shared) ---------- */
 var CHECK_SVG = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>';
+var PENCIL_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
+
+/* ---------- editable category chip (rename / delete inline, from the Gasto/Ingreso quick-pick grids) ---------- */
+function renderEditableCategoryChip(wrap, c, kind, onSelect, onChanged){
+  var chip = document.createElement("div");
+  chip.className = "chip";
+  var colorVar = catColorVar(kind, c.id);
+  chip.innerHTML =
+    '<span class="dot" style="background:'+colorVar+'">'+escapeHtml(catInitial(c.label))+'</span>' +
+    '<span class="chip-label">'+escapeHtml(c.label)+'</span>' +
+    '<button type="button" class="chip-edit-btn" aria-label="Editar categoría">'+PENCIL_SVG+'</button>';
+  chip.addEventListener("click", function(e){
+    if(e.target.closest(".chip-edit-btn")) return;
+    onSelect();
+  });
+  chip.querySelector(".chip-edit-btn").addEventListener("click", function(e){
+    e.stopPropagation();
+    openChipEditForm(chip, c, kind, onChanged);
+  });
+  wrap.appendChild(chip);
+}
+
+function openChipEditForm(chip, c, kind, onChanged){
+  var form = document.createElement("div");
+  form.className = "chip-edit-form";
+  var input = document.createElement("input");
+  input.className = "inline-add-input";
+  input.value = c.label;
+  var ok = document.createElement("button");
+  ok.className = "inline-add-ok";
+  ok.innerHTML = CHECK_SVG;
+  var del = document.createElement("button");
+  del.type = "button";
+  del.className = "chip-edit-del";
+  del.innerHTML = "&times;";
+  del.setAttribute("aria-label", "Eliminar categoría");
+  form.appendChild(input);
+  form.appendChild(ok);
+  form.appendChild(del);
+  chip.replaceWith(form);
+  input.focus();
+  input.select();
+
+  var done = false;
+  function commitRename(){
+    if(done) return;
+    done = true;
+    var label = input.value.trim();
+    if(label && label !== c.label){ c.label = label; saveSettings(); }
+    onChanged();
+  }
+  ok.addEventListener("click", commitRename);
+  input.addEventListener("keydown", function(e){
+    if(e.key === "Enter"){ e.preventDefault(); commitRename(); }
+    else if(e.key === "Escape"){ e.preventDefault(); done = true; onChanged(); }
+  });
+  input.addEventListener("blur", function(){ setTimeout(commitRename, 150); });
+  del.addEventListener("click", function(){
+    if(done) return;
+    done = true;
+    if(window.confirm('¿Eliminar la categoría "'+c.label+'"? Los movimientos ya cargados no se borran.')){
+      var list = kind === "gasto" ? settings.gastoCategories : settings.ingresoCategories;
+      var idx = list.indexOf(c);
+      if(idx !== -1) list.splice(idx, 1);
+      saveSettings();
+    }
+    onChanged();
+  });
+}
 
 function renderAddCategoryChip(wrap, onAdded){
   var chip = document.createElement("div");
@@ -1299,12 +1383,10 @@ function renderQuickGastoChips(){
   var wrap = document.getElementById("quick-gasto-chips");
   wrap.innerHTML = "";
   (settings.gastoCategories||[]).forEach(function(c){
-    var chip = document.createElement("div");
-    chip.className = "chip";
-    var colorVar = catColorVar("gasto", c.id);
-    chip.innerHTML = '<span class="dot" style="background:'+colorVar+'">'+escapeHtml(catInitial(c.label))+'</span>'+escapeHtml(c.label);
-    chip.addEventListener("click", function(){ openAddSheet(c.id, "gasto"); });
-    wrap.appendChild(chip);
+    renderEditableCategoryChip(wrap, c, "gasto",
+      function(){ openAddSheet(c.id, "gasto"); },
+      function(){ renderQuickGastoChips(); }
+    );
   });
   cardInstallments.filter(function(c){ return c.paidInstallments < c.totalInstallments; }).forEach(function(c){
     var chip = document.createElement("div");
@@ -1328,12 +1410,10 @@ function renderQuickIngresoChips(){
   if(!wrap) return;
   wrap.innerHTML = "";
   (settings.ingresoCategories||[]).forEach(function(c){
-    var chip = document.createElement("div");
-    chip.className = "chip";
-    var colorVar = catColorVar("ingreso", c.id);
-    chip.innerHTML = '<span class="dot" style="background:'+colorVar+'">'+escapeHtml(catInitial(c.label))+'</span>'+escapeHtml(c.label);
-    chip.addEventListener("click", function(){ openAddSheet(c.id, "ingreso"); });
-    wrap.appendChild(chip);
+    renderEditableCategoryChip(wrap, c, "ingreso",
+      function(){ openAddSheet(c.id, "ingreso"); },
+      function(){ renderQuickIngresoChips(); }
+    );
   });
   renderAddCategoryChip(wrap, function(label){
     var id = slugId("i", label);
