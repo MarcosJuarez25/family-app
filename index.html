@@ -357,6 +357,32 @@ button{font-family:inherit;}
   0%{box-shadow:var(--shadow-1), 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);}
   100%{box-shadow:var(--shadow-1), 0 0 0 0 transparent;}
 }
+
+body.no-scroll{overflow:hidden; height:100%;}
+
+/* ============ FULL-SCREEN VIEW (all movements) ============ */
+.screen{
+  position:fixed; inset:0; z-index:60; background:var(--bg);
+  transform:translateX(100%); transition:transform .28s cubic-bezier(.16,1,.3,1);
+  display:flex; flex-direction:column;
+}
+.screen.show{transform:translateX(0);}
+.screen-head{
+  display:flex; align-items:center; gap:14px; padding:14px 20px;
+  position:sticky; top:0; background:var(--bg); z-index:2;
+  border-bottom:1px solid var(--line); flex:none;
+}
+.screen-back{
+  width:38px; height:38px; border-radius:50%; border:none; flex:none;
+  background:var(--surface-2); color:var(--ink); cursor:pointer;
+  display:flex; align-items:center; justify-content:center;
+}
+.screen-back:hover{background:var(--surface-3);}
+.screen-title{font-family:var(--font-display); font-weight:600; font-size:19px;}
+.screen-body{
+  flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch;
+  padding:16px 20px 40px; max-width:640px; margin:0 auto; width:100%; box-sizing:border-box;
+}
 .bar-hover{cursor:pointer;}
 .inline-add-form{display:flex; align-items:center; gap:6px;}
 .inline-add-input{
@@ -622,6 +648,30 @@ button{font-family:inherit;}
 
   <div class="section">
     <div class="section-head">
+      <div class="section-title">Ingresos</div>
+      <div class="section-sub">últimos 6 meses</div>
+    </div>
+    <div class="card">
+      <div class="trend-wrap">
+        <svg id="ingreso-trend-chart" viewBox="0 0 600 160" style="width:100%; height:auto; display:block; overflow:visible;"></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <div class="section-title">Gastos</div>
+      <div class="section-sub">últimos 6 meses</div>
+    </div>
+    <div class="card">
+      <div class="trend-wrap">
+        <svg id="gasto-trend-chart" viewBox="0 0 600 160" style="width:100%; height:auto; display:block; overflow:visible;"></svg>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
       <div class="section-title">Movimientos</div>
     </div>
     <div id="tx-list"></div>
@@ -635,6 +685,16 @@ button{font-family:inherit;}
 </div>
 
 <div class="scrim" id="scrim"></div>
+
+<div class="screen" id="screen-all-tx">
+  <div class="screen-head">
+    <button type="button" class="screen-back" id="btn-back-all-tx" aria-label="Volver">
+      <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+    </button>
+    <div class="screen-title">Todos los movimientos</div>
+  </div>
+  <div class="screen-body" id="all-tx-list"></div>
+</div>
 
 <!-- Add/Edit sheet -->
 <div class="sheet" id="sheet-tx">
@@ -876,8 +936,7 @@ var settings = null;
 var allTx = [];
 var cardInstallments = [];
 var selectedMonth = ymKey(new Date());
-var TX_PAGE_SIZE = 20;
-var txListLimit = TX_PAGE_SIZE;
+var TX_LIST_PREVIEW = 10;
 var editingTxId = null;
 var currentType = "gasto";
 var selectedCatId = null;
@@ -1198,6 +1257,7 @@ function renderAll(){
   renderCardInstallments();
   renderCatBreakdown(mtx);
   renderTrend();
+  renderIncomeExpenseTrends();
   renderTxList(mtx);
 }
 
@@ -1439,8 +1499,7 @@ function renderCatBreakdown(mtx){
 }
 
 /* ---------- trend ---------- */
-function renderTrend(){
-  var svg = document.getElementById("trend-chart");
+function computeTrendData(){
   var today = new Date();
   var y = today.getFullYear(), m = today.getMonth()+1;
   var months = [];
@@ -1449,12 +1508,17 @@ function renderTrend(){
     while(mm <= 0){ mm += 12; yy -= 1; }
     months.push(yy + "-" + pad2(mm));
   }
-  var data = months.map(function(ym){
+  return months.map(function(ym){
     var tx = monthTx(ym);
     var ing = 0, gas = 0;
     tx.forEach(function(t){ if(t.type==="ingreso") ing += (t.amount||0); else gas += (t.amount||0); });
     return {ym: ym, ing: ing, gas: gas};
   });
+}
+
+function renderTrend(){
+  var svg = document.getElementById("trend-chart");
+  var data = computeTrendData();
   var maxVal = Math.max.apply(null, data.map(function(d){ return Math.max(d.ing, d.gas); }).concat([1]));
 
   var W=600, H=190, padL=6, padR=6, padT=22, padB=26;
@@ -1502,8 +1566,8 @@ function renderTrend(){
 
 function attachChartInteractions(svg){
   var tip = document.getElementById("chart-tip");
-  var bars = svg.querySelectorAll(".bar-hover");
-  bars.forEach(function(bar){
+  var hoverEls = svg.querySelectorAll(".bar-hover, .pt-hover");
+  hoverEls.forEach(function(bar){
     bar.addEventListener("pointerenter", function(e){
       tip.textContent = bar.getAttribute("data-tip");
       tip.style.opacity = "1";
@@ -1522,10 +1586,60 @@ function attachChartInteractions(svg){
   }
 }
 
+/* ---------- single-series frequency-polygon charts (ingresos / gastos) ---------- */
+function renderPolygonChart(svgId, data, key, colorVar){
+  var svg = document.getElementById(svgId);
+  if(!svg) return;
+  var maxVal = Math.max.apply(null, data.map(function(d){ return d[key]; }).concat([1]));
+
+  var W=600, H=160, padL=6, padR=6, padT=22, padB=26;
+  var chartW = W - padL - padR, chartH = H - padT - padB;
+  var stepX = data.length > 1 ? chartW/(data.length-1) : 0;
+  var parts = [];
+
+  for(var g=0; g<=2; g++){
+    var frac = g/2;
+    var yy2 = padT + chartH*(1-frac);
+    parts.push('<line x1="'+padL+'" y1="'+yy2.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yy2.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>');
+  }
+
+  var pts = data.map(function(d, idx){
+    var x = padL + idx*stepX;
+    var v = maxVal ? (d[key]/maxVal)*chartH : 0;
+    var yv = padT + chartH - v;
+    return {x:x, y:yv, d:d};
+  });
+
+  var linePath = pts.map(function(p, idx){ return (idx===0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1); }).join(" ");
+  var areaPath = linePath + " L" + pts[pts.length-1].x.toFixed(1) + " " + (padT+chartH) + " L" + pts[0].x.toFixed(1) + " " + (padT+chartH) + " Z";
+
+  parts.push('<path d="'+areaPath+'" style="fill:'+colorVar+'; opacity:0.12; stroke:none;"/>');
+  parts.push('<path d="'+linePath+'" style="fill:none; stroke:'+colorVar+'; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;"/>');
+
+  pts.forEach(function(p, idx){
+    var isSelected = p.d.ym === selectedMonth;
+    var label = key === "ing" ? "Ingresos" : "Gastos";
+    var tipTxt = monthLabel(p.d.ym) + " · " + label + " " + fmt(p.d[key]) + " · tocá para ver el detalle";
+    parts.push('<circle class="pt-hover" data-ym="'+p.d.ym+'" data-tip="'+escapeHtml(tipTxt)+'" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+(isSelected?6:4.5)+'" style="fill:'+colorVar+'; stroke:var(--surface); stroke-width:2;"/>');
+    if(p.d[key] > 0){
+      parts.push('<text x="'+p.x.toFixed(1)+'" y="'+(p.y-11).toFixed(1)+'" text-anchor="middle" style="font:600 10px var(--font-mono); fill:var(--ink-muted);">'+fmtK(p.d[key])+'</text>');
+    }
+    parts.push('<text x="'+p.x.toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" style="font:'+(isSelected?"700":"600")+' 11px var(--font-body); fill:'+(isSelected?"var(--ink)":"var(--ink-faint)")+';">'+escapeHtml(monthAbbrev(p.d.ym))+'</text>');
+  });
+
+  svg.innerHTML = parts.join("");
+  attachChartInteractions(svg);
+}
+
+function renderIncomeExpenseTrends(){
+  var data = computeTrendData();
+  renderPolygonChart("ingreso-trend-chart", data, "ing", "var(--ingreso-total)");
+  renderPolygonChart("gasto-trend-chart", data, "gas", "var(--gasto-total)");
+}
+
 function goToMonthDetail(ym){
   if(!ym) return;
   selectedMonth = ym;
-  txListLimit = TX_PAGE_SIZE;
   renderAll();
   var target = document.getElementById("cat-breakdown-section");
   if(target){
@@ -1540,17 +1654,13 @@ function goToMonthDetail(ym){
 }
 
 /* ---------- transactions list ---------- */
-function renderTxList(mtx){
-  var wrap = document.getElementById("tx-list");
-  if(mtx.length === 0){
-    wrap.innerHTML = '<div class="card"><div class="empty-note">No hay movimientos cargados este mes todavía. Tocá el botón + para agregar el primero.</div></div>';
-    return;
-  }
-  var sortedAll = mtx.slice().sort(function(a,b){
+function sortTxDesc(mtx){
+  return mtx.slice().sort(function(a,b){
     if(a.date !== b.date) return a.date < b.date ? 1 : -1;
     return (b.createdAt||0) - (a.createdAt||0);
   });
-  var sorted = sortedAll.slice(0, txListLimit);
+}
+function buildTxGroupsHtml(sorted){
   var groups = [];
   var byDate = {};
   sorted.forEach(function(t){
@@ -1560,7 +1670,7 @@ function renderTxList(mtx){
   var todayStr = todayISO();
   var yestStr = (function(){ var d=new Date(); d.setDate(d.getDate()-1); return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate()); })();
 
-  wrap.innerHTML = groups.map(function(dateStr){
+  return groups.map(function(dateStr){
     var label;
     if(dateStr === todayStr) label = "Hoy";
     else if(dateStr === yestStr) label = "Ayer";
@@ -1589,27 +1699,62 @@ function renderTxList(mtx){
     }).join("");
     return '<div class="tx-day"><div class="tx-day-label">'+escapeHtml(label)+'</div><div class="card">'+rowsHtml+'</div></div>';
   }).join("");
+}
+function wireTxRowClicks(container){
+  container.querySelectorAll(".tx-row").forEach(function(row){
+    row.addEventListener("click", function(){
+      var tx = allTx.find(function(t){ return t.id === row.dataset.id; });
+      if(tx) openEditSheet(tx);
+    });
+  });
+}
+function renderTxList(mtx){
+  var wrap = document.getElementById("tx-list");
+  if(mtx.length === 0){
+    wrap.innerHTML = '<div class="card"><div class="empty-note">No hay movimientos cargados este mes todavía. Tocá el botón + para agregar el primero.</div></div>';
+    return;
+  }
+  var sortedAll = sortTxDesc(mtx);
+  var sorted = sortedAll.slice(0, TX_LIST_PREVIEW);
+
+  wrap.innerHTML = buildTxGroupsHtml(sorted);
 
   if(sortedAll.length > sorted.length){
     var remaining = sortedAll.length - sorted.length;
     wrap.innerHTML += '<button type="button" class="btn-load-more" id="btn-tx-load-more">Ver más ('+remaining+')</button>';
   }
 
-  wrap.querySelectorAll(".tx-row").forEach(function(row){
-    row.addEventListener("click", function(){
-      var tx = allTx.find(function(t){ return t.id === row.dataset.id; });
-      if(tx) openEditSheet(tx);
-    });
-  });
+  wireTxRowClicks(wrap);
 
   var loadMoreBtn = document.getElementById("btn-tx-load-more");
   if(loadMoreBtn){
     loadMoreBtn.addEventListener("click", function(){
-      txListLimit += TX_PAGE_SIZE;
-      renderTxList(mtx);
+      openAllTxScreen(sortedAll);
     });
   }
 }
+
+/* ---------- full "all movements" screen ---------- */
+var screenAllTx = document.getElementById("screen-all-tx");
+function renderAllTxScreen(sortedAll){
+  var wrap = document.getElementById("all-tx-list");
+  wrap.innerHTML = buildTxGroupsHtml(sortedAll);
+  wireTxRowClicks(wrap);
+}
+function openAllTxScreen(sortedAll){
+  renderAllTxScreen(sortedAll);
+  screenAllTx.classList.add("show");
+  pushOverlay("screen");
+}
+function closeScreenVisual(){
+  screenAllTx.classList.remove("show");
+}
+function closeAllTxScreen(){
+  if(!screenAllTx.classList.contains("show")) return;
+  closeScreenVisual();
+  popOverlay("screen", false);
+}
+document.getElementById("btn-back-all-tx").addEventListener("click", closeAllTxScreen);
 
 /* ---------- add/edit sheet ---------- */
 var scrim = document.getElementById("scrim");
@@ -1618,16 +1763,55 @@ var sheetSettings = document.getElementById("sheet-settings");
 var sheetCard = document.getElementById("sheet-card");
 var sheetPayInstallment = document.getElementById("sheet-pay-installment");
 
+/* ---------- overlay/back-button stack ----------
+   Every sheet and the full-screen movement list push one history entry
+   when they open, so the device/browser back gesture closes them
+   instead of leaving the app. A suppress flag keeps our own
+   history.back() calls (from an explicit close button) from being
+   re-processed as if the user had pressed back. */
+var overlayStack = [];
+var suppressNextPopstate = false;
+
+function pushOverlay(kind){
+  overlayStack.push(kind);
+  document.body.classList.add("no-scroll");
+  history.pushState({ovDepth: overlayStack.length}, "", location.href);
+}
+function popOverlay(kind, fromPopstate){
+  var idx = overlayStack.lastIndexOf(kind);
+  if(idx !== -1) overlayStack.splice(idx, 1);
+  if(overlayStack.length === 0) document.body.classList.remove("no-scroll");
+  if(!fromPopstate){
+    suppressNextPopstate = true;
+    history.back();
+  }
+}
+window.addEventListener("popstate", function(){
+  if(suppressNextPopstate){ suppressNextPopstate = false; return; }
+  if(overlayStack.length === 0) return;
+  var kind = overlayStack[overlayStack.length - 1];
+  if(kind === "sheet") closeSheetsVisual();
+  else if(kind === "screen") closeScreenVisual();
+  popOverlay(kind, true);
+});
+
 function openSheet(sheet){
   scrim.classList.add("show");
   sheet.classList.add("show");
+  pushOverlay("sheet");
 }
-function closeSheets(){
+function closeSheetsVisual(){
   scrim.classList.remove("show");
   sheetTx.classList.remove("show");
   sheetSettings.classList.remove("show");
   sheetCard.classList.remove("show");
   sheetPayInstallment.classList.remove("show");
+}
+function closeSheets(){
+  var wasOpen = sheetTx.classList.contains("show") || sheetSettings.classList.contains("show") ||
+    sheetCard.classList.contains("show") || sheetPayInstallment.classList.contains("show");
+  closeSheetsVisual();
+  if(wasOpen) popOverlay("sheet", false);
 }
 scrim.addEventListener("click", closeSheets);
 
@@ -1865,7 +2049,6 @@ function shiftMonth(delta){
   var p = selectedMonth.split("-").map(Number);
   var d = new Date(p[0], p[1]-1+delta, 1);
   selectedMonth = ymKey(d);
-  txListLimit = TX_PAGE_SIZE;
   renderAll();
 }
 
