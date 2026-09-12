@@ -253,11 +253,39 @@ button{font-family:inherit;}
   border:1px solid var(--line);
   border-radius:var(--radius-sm);
   padding:10px 12px;
+  text-align:left; font:inherit; color:inherit; cursor:pointer; margin:0; width:100%;
+  transition:border-color .15s ease, background .15s ease;
+}
+.hero-stat:hover{border-color:color-mix(in srgb, var(--accent) 40%, var(--line));}
+.hero-stat[aria-pressed="true"]{
+  border-color:var(--accent);
+  background:color-mix(in srgb, var(--accent) 10%, var(--surface));
 }
 .hero-stat-label{font-size:12px; color:var(--ink-muted); display:flex; align-items:center; gap:6px; font-weight:600;}
 .hero-stat-dot{width:8px; height:8px; border-radius:50%; flex:none;}
 .hero-stat-val{font-family:var(--font-mono); font-size:17px; font-weight:600; margin-top:3px;}
 .hero-spark{width:100%; height:52px; display:block;}
+
+.hero-chart-wrap{
+  margin-top:16px; padding-top:16px; border-top:1px solid var(--line);
+  animation:heroChartIn .2s ease;
+}
+@keyframes heroChartIn{ from{opacity:0; transform:translateY(-4px);} to{opacity:1; transform:translateY(0);} }
+.hero-chart-head{display:flex; align-items:center; justify-content:space-between; gap:10px; margin-bottom:8px;}
+.hero-chart-title{font-size:13px; font-weight:600; color:var(--ink-muted);}
+.hero-chart-toggle{
+  display:flex; align-items:center; gap:6px;
+  background:color-mix(in srgb, var(--surface) 70%, transparent);
+  border:1px solid var(--line); border-radius:999px;
+  padding:5px 11px; font:inherit; font-size:12px; font-weight:600; color:var(--ink);
+  cursor:pointer; flex:none;
+}
+.hero-chart-toggle:hover{border-color:color-mix(in srgb, var(--accent) 40%, var(--line));}
+.hero-chart-toggle svg{width:14px; height:14px; flex:none;}
+.hero-chart-legend{display:flex; flex-wrap:wrap; gap:8px 14px; margin-top:10px;}
+.hero-chart-legend-item{display:flex; align-items:center; gap:6px; font-size:12px; color:var(--ink-muted);}
+.hero-chart-legend-dot{width:8px; height:8px; border-radius:50%; flex:none;}
+.hero-chart-legend-val{font-family:var(--font-mono); color:var(--ink); font-weight:600;}
 
 /* ============ FAB ============ */
 .fab{
@@ -593,16 +621,27 @@ body.no-scroll{overflow:hidden;}
     <div class="hero-label">Saldo del mes</div>
     <div class="hero-balance tnum" id="hero-balance">$0</div>
     <div class="hero-split">
-      <div class="hero-stat">
+      <button type="button" class="hero-stat" id="hero-stat-ingreso" data-kind="ingreso" aria-pressed="false">
         <div class="hero-stat-label"><span class="hero-stat-dot" style="background:var(--ingreso-total)"></span>Ingresos</div>
         <div class="hero-stat-val tnum" id="hero-ingresos">$0</div>
-      </div>
-      <div class="hero-stat">
+      </button>
+      <button type="button" class="hero-stat" id="hero-stat-gasto" data-kind="gasto" aria-pressed="false">
         <div class="hero-stat-label"><span class="hero-stat-dot" style="background:var(--gasto-total)"></span>Gastos</div>
         <div class="hero-stat-val tnum" id="hero-gastos">$0</div>
-      </div>
+      </button>
     </div>
     <svg class="hero-spark" id="hero-spark" viewBox="0 0 300 52" preserveAspectRatio="none"></svg>
+
+    <div class="hero-chart-wrap" id="hero-chart-wrap" hidden>
+      <div class="hero-chart-head">
+        <div class="hero-chart-title" id="hero-chart-title">Ingresos por categoría</div>
+        <button type="button" class="hero-chart-toggle" id="hero-chart-toggle" aria-label="Cambiar a gráfico de torta">
+          <span id="hero-chart-toggle-icon"></span><span id="hero-chart-toggle-label">Ver en torta</span>
+        </button>
+      </div>
+      <svg id="hero-cat-chart" viewBox="0 0 300 190" style="width:100%; height:auto; display:block; overflow:visible;"></svg>
+      <div class="hero-chart-legend" id="hero-chart-legend"></div>
+    </div>
   </div>
 
   <div class="section">
@@ -948,6 +987,8 @@ var editingTxId = null;
 var currentType = "gasto";
 var selectedCatId = null;
 var selectedAuthor = null;
+var heroChartKind = null;
+var heroChartMode = "bar";
 var addingGastoCat = false;
 var addingIngresoCat = false;
 
@@ -1426,6 +1467,7 @@ function renderHero(mtx){
   document.getElementById("hero-ingresos").textContent = fmt(ingresos);
   document.getElementById("hero-gastos").textContent = fmt(gastos);
   renderSpark(mtx);
+  renderHeroCatChart(mtx);
 }
 
 function renderSpark(mtx){
@@ -1474,6 +1516,162 @@ function renderSpark(mtx){
     '<path d="'+linePath+'" fill="none" stroke="'+color+'" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>' +
     '<circle cx="'+pts[pts.length-1][0].toFixed(1)+'" cy="'+pts[pts.length-1][1].toFixed(1)+'" r="3" fill="'+color+'"/>';
 }
+
+/* ---------- hero category chart (ingresos/gastos por categoría, mes actual) ---------- */
+var HERO_CHART_BAR_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><line x1="6" y1="20" x2="6" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="18" y1="20" x2="18" y2="14"/></svg>';
+var HERO_CHART_PIE_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.21 15.89A10 10 0 1 1 8 2.83"/><path d="M22 12A10 10 0 0 0 12 2v10z"/></svg>';
+
+function heroCatRows(mtx, kind){
+  var tx = mtx.filter(function(t){ return t.type === kind; });
+  var totals = {};
+  tx.forEach(function(t){ totals[t.categoryId] = (totals[t.categoryId]||0) + (t.amount||0); });
+  var catList = kind === "gasto" ? (settings.gastoCategories||[]) : (settings.ingresoCategories||[]);
+  var rows = catList.map(function(c){ return {id:c.id, label:c.label, amount: totals[c.id]||0}; })
+    .filter(function(r){ return r.amount > 0; });
+  if(kind === "gasto" && totals.tarjeta > 0){ rows.push({id:"tarjeta", label:"Tarjeta", amount: totals.tarjeta}); }
+  rows.sort(function(a,b){ return b.amount - a.amount; });
+  var total = tx.reduce(function(s,t){ return s + (t.amount||0); }, 0);
+  return {rows: rows, total: total};
+}
+
+function heroCatColor(kind, id, idx){
+  if(kind === "gasto") return catColorVar("gasto", id);
+  var shade = 78 - (idx * 11);
+  if(shade < 20) shade = 20 + (idx % 3) * 6;
+  return "color-mix(in srgb, var(--c-ingreso) " + shade + "%, var(--surface))";
+}
+
+function updateHeroChartToggleUI(){
+  var icon = document.getElementById("hero-chart-toggle-icon");
+  var label = document.getElementById("hero-chart-toggle-label");
+  var btn = document.getElementById("hero-chart-toggle");
+  if(heroChartMode === "bar"){
+    icon.innerHTML = HERO_CHART_PIE_ICON;
+    label.textContent = "Ver en torta";
+    btn.setAttribute("aria-label", "Cambiar a gráfico de torta");
+  } else {
+    icon.innerHTML = HERO_CHART_BAR_ICON;
+    label.textContent = "Ver en barras";
+    btn.setAttribute("aria-label", "Cambiar a gráfico de barras");
+  }
+}
+
+function renderHeroCatChart(mtx){
+  var wrap = document.getElementById("hero-chart-wrap");
+  document.getElementById("hero-stat-ingreso").setAttribute("aria-pressed", String(heroChartKind === "ingreso"));
+  document.getElementById("hero-stat-gasto").setAttribute("aria-pressed", String(heroChartKind === "gasto"));
+  if(!heroChartKind){ wrap.hidden = true; return; }
+  wrap.hidden = false;
+
+  var kind = heroChartKind;
+  var data = heroCatRows(mtx, kind);
+  var rows = data.rows, total = data.total;
+  document.getElementById("hero-chart-title").textContent =
+    (kind === "ingreso" ? "Ingresos" : "Gastos") + " por categoría";
+  updateHeroChartToggleUI();
+
+  var svg = document.getElementById("hero-cat-chart");
+  var legend = document.getElementById("hero-chart-legend");
+
+  if(rows.length === 0){
+    svg.innerHTML = "";
+    legend.innerHTML = '<div class="empty-note">Todavía no cargaste ' + (kind === "ingreso" ? "ingresos" : "gastos") + ' este mes.</div>';
+    return;
+  }
+
+  if(heroChartMode === "pie"){
+    renderHeroPieChart(svg, rows, total, kind);
+  } else {
+    renderHeroBarChart(svg, rows, total, kind);
+  }
+
+  legend.innerHTML = rows.map(function(r, idx){
+    var pct = total > 0 ? Math.round((r.amount/total)*100) : 0;
+    var color = heroCatColor(kind, r.id, idx);
+    return (
+      '<div class="hero-chart-legend-item">' +
+        '<span class="hero-chart-legend-dot" style="background:'+color+'"></span>' +
+        escapeHtml(r.label) + ' <span class="hero-chart-legend-val">'+pct+'%</span>' +
+      '</div>'
+    );
+  }).join("");
+}
+
+function renderHeroBarChart(svg, rows, total, kind){
+  var W = 300, H = 190, padL = 10, padR = 10, padT = 14, padB = 30;
+  var chartW = W - padL - padR, chartH = H - padT - padB;
+  var maxVal = Math.max.apply(null, rows.map(function(r){ return r.amount; }).concat([1]));
+  var n = rows.length;
+  var gap = 10;
+  var barW = Math.min(38, (chartW - gap*(n-1)) / n);
+  var usedW = barW*n + gap*(n-1);
+  var startX = padL + (chartW - usedW)/2;
+
+  var parts = [];
+  for(var g=0; g<=2; g++){
+    var yy = padT + chartH*(1-g/2);
+    parts.push('<line x1="'+padL+'" y1="'+yy.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yy.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>');
+  }
+
+  rows.forEach(function(r, idx){
+    var x = startX + idx*(barW+gap);
+    var h = maxVal ? (r.amount/maxVal)*chartH : 0;
+    var y = padT + chartH - h;
+    var color = heroCatColor(kind, r.id, idx);
+    parts.push('<rect x="'+x.toFixed(1)+'" y="'+y.toFixed(1)+'" width="'+barW.toFixed(1)+'" height="'+Math.max(h,2).toFixed(1)+'" rx="4" fill="'+color+'"/>');
+    parts.push('<text x="'+(x+barW/2).toFixed(1)+'" y="'+(y-7).toFixed(1)+'" text-anchor="middle" style="font:700 10px var(--font-mono); fill:var(--ink-muted);">'+fmtK(r.amount)+'</text>');
+    parts.push('<text x="'+(x+barW/2).toFixed(1)+'" y="'+(H-10)+'" text-anchor="middle" style="font:600 11px var(--font-body); fill:var(--ink-faint);">'+escapeHtml(catInitial(r.label))+'</text>');
+  });
+
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.innerHTML = parts.join("");
+}
+
+function renderHeroPieChart(svg, rows, total, kind){
+  var W = 300, H = 190, cx = W/2, cy = H/2 - 6, r = 74;
+  var parts = [];
+  var angle = -Math.PI/2;
+
+  if(rows.length === 1){
+    parts.push('<circle cx="'+cx+'" cy="'+cy+'" r="'+r+'" fill="'+heroCatColor(kind, rows[0].id, 0)+'"/>');
+  } else {
+    rows.forEach(function(row, idx){
+      var frac = total > 0 ? row.amount/total : 0;
+      var sweep = frac * Math.PI * 2;
+      var end = angle + sweep;
+      var x1 = cx + r*Math.cos(angle), y1 = cy + r*Math.sin(angle);
+      var x2 = cx + r*Math.cos(end), y2 = cy + r*Math.sin(end);
+      var large = sweep > Math.PI ? 1 : 0;
+      var path = 'M'+cx+','+cy+' L'+x1.toFixed(1)+','+y1.toFixed(1)+' A'+r+','+r+' 0 '+large+' 1 '+x2.toFixed(1)+','+y2.toFixed(1)+' Z';
+      parts.push('<path d="'+path+'" fill="'+heroCatColor(kind, row.id, idx)+'" stroke="var(--surface)" stroke-width="2"/>');
+      var pct = Math.round(frac*100);
+      if(pct >= 8){
+        var midAngle = angle + sweep/2;
+        var lx = cx + (r*0.62)*Math.cos(midAngle), ly = cy + (r*0.62)*Math.sin(midAngle);
+        parts.push('<text x="'+lx.toFixed(1)+'" y="'+ly.toFixed(1)+'" text-anchor="middle" dominant-baseline="middle" style="font:700 11px var(--font-mono); fill:#fff;">'+pct+'%</text>');
+      }
+      angle = end;
+    });
+  }
+
+  svg.setAttribute("viewBox", "0 0 " + W + " " + H);
+  svg.innerHTML = parts.join("");
+}
+
+document.getElementById("hero-stat-ingreso").addEventListener("click", function(){
+  heroChartKind = (heroChartKind === "ingreso") ? null : "ingreso";
+  heroChartMode = "bar";
+  renderHeroCatChart(monthTx(selectedMonth));
+});
+document.getElementById("hero-stat-gasto").addEventListener("click", function(){
+  heroChartKind = (heroChartKind === "gasto") ? null : "gasto";
+  heroChartMode = "bar";
+  renderHeroCatChart(monthTx(selectedMonth));
+});
+document.getElementById("hero-chart-toggle").addEventListener("click", function(){
+  heroChartMode = (heroChartMode === "bar") ? "pie" : "bar";
+  renderHeroCatChart(monthTx(selectedMonth));
+});
 
 /* ---------- card installments (tarjeta) ---------- */
 function renderCardInstallments(){
