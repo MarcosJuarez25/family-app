@@ -663,24 +663,16 @@ body.no-scroll{overflow:hidden;}
 
   <div class="section">
     <div class="section-head">
-      <div class="section-title">Ingresos</div>
+      <div class="section-title">Ingresos y gastos</div>
       <div class="section-sub">últimos 6 meses</div>
     </div>
     <div class="card">
       <div class="trend-wrap">
-        <svg id="ingreso-trend-chart" viewBox="0 0 600 160" style="width:100%; height:auto; display:block; overflow:visible;"></svg>
-      </div>
-    </div>
-  </div>
-
-  <div class="section">
-    <div class="section-head">
-      <div class="section-title">Gastos</div>
-      <div class="section-sub">últimos 6 meses</div>
-    </div>
-    <div class="card">
-      <div class="trend-wrap">
-        <svg id="gasto-trend-chart" viewBox="0 0 600 160" style="width:100%; height:auto; display:block; overflow:visible;"></svg>
+        <div class="trend-legend">
+          <div class="legend-item"><span class="legend-dot" style="background:var(--ingreso-total)"></span>Ingresos</div>
+          <div class="legend-item"><span class="legend-dot" style="background:var(--gasto-total)"></span>Gastos</div>
+        </div>
+        <svg id="ingreso-gasto-trend-chart" viewBox="0 0 600 190" style="width:100%; height:auto; display:block; overflow:visible;"></svg>
       </div>
     </div>
   </div>
@@ -1666,13 +1658,13 @@ function attachChartInteractions(svg){
   }
 }
 
-/* ---------- single-series frequency-polygon charts (ingresos / gastos) ---------- */
-function renderPolygonChart(svgId, data, key, colorVar){
+/* ---------- combined frequency-polygon chart (ingresos + gastos, one box) ---------- */
+function renderDualPolygonChart(svgId, data){
   var svg = document.getElementById(svgId);
   if(!svg) return;
-  var maxVal = Math.max.apply(null, data.map(function(d){ return d[key]; }).concat([1]));
+  var maxVal = Math.max.apply(null, data.map(function(d){ return Math.max(d.ing, d.gas); }).concat([1]));
 
-  var W=600, H=160, padL=6, padR=6, padT=22, padB=26;
+  var W=600, H=190, padL=6, padR=6, padT=22, padB=26;
   var chartW = W - padL - padR, chartH = H - padT - padB;
   var stepX = data.length > 1 ? chartW/(data.length-1) : 0;
   var parts = [];
@@ -1683,28 +1675,39 @@ function renderPolygonChart(svgId, data, key, colorVar){
     parts.push('<line x1="'+padL+'" y1="'+yy2.toFixed(1)+'" x2="'+(W-padR)+'" y2="'+yy2.toFixed(1)+'" stroke="var(--line)" stroke-width="1"/>');
   }
 
-  var pts = data.map(function(d, idx){
+  function seriesPoints(key){
+    return data.map(function(d, idx){
+      var x = padL + idx*stepX;
+      var v = maxVal ? (d[key]/maxVal)*chartH : 0;
+      var yv = padT + chartH - v;
+      return {x:x, y:yv, d:d};
+    });
+  }
+  function drawSeries(key, colorVar){
+    var pts = seriesPoints(key);
+    var linePath = pts.map(function(p, idx){ return (idx===0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1); }).join(" ");
+    var areaPath = linePath + " L" + pts[pts.length-1].x.toFixed(1) + " " + (padT+chartH) + " L" + pts[0].x.toFixed(1) + " " + (padT+chartH) + " Z";
+    parts.push('<path d="'+areaPath+'" style="fill:'+colorVar+'; opacity:0.10; stroke:none;"/>');
+    parts.push('<path d="'+linePath+'" style="fill:none; stroke:'+colorVar+'; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;"/>');
+    return pts;
+  }
+  function drawPoints(pts, key, colorVar, label){
+    pts.forEach(function(p){
+      var isSelected = p.d.ym === selectedMonth;
+      var tipTxt = monthLabel(p.d.ym) + " · " + label + " " + fmt(p.d[key]) + " · tocá para ver el detalle";
+      parts.push('<circle class="pt-hover" data-ym="'+p.d.ym+'" data-tip="'+escapeHtml(tipTxt)+'" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+(isSelected?6:4.5)+'" style="fill:'+colorVar+'; stroke:var(--surface); stroke-width:2;"/>');
+    });
+  }
+
+  var gasPts = drawSeries("gas", "var(--gasto-total)");
+  var ingPts = drawSeries("ing", "var(--ingreso-total)");
+  drawPoints(gasPts, "gas", "var(--gasto-total)", "Gastos");
+  drawPoints(ingPts, "ing", "var(--ingreso-total)", "Ingresos");
+
+  data.forEach(function(d, idx){
+    var isSelected = d.ym === selectedMonth;
     var x = padL + idx*stepX;
-    var v = maxVal ? (d[key]/maxVal)*chartH : 0;
-    var yv = padT + chartH - v;
-    return {x:x, y:yv, d:d};
-  });
-
-  var linePath = pts.map(function(p, idx){ return (idx===0 ? "M" : "L") + p.x.toFixed(1) + " " + p.y.toFixed(1); }).join(" ");
-  var areaPath = linePath + " L" + pts[pts.length-1].x.toFixed(1) + " " + (padT+chartH) + " L" + pts[0].x.toFixed(1) + " " + (padT+chartH) + " Z";
-
-  parts.push('<path d="'+areaPath+'" style="fill:'+colorVar+'; opacity:0.12; stroke:none;"/>');
-  parts.push('<path d="'+linePath+'" style="fill:none; stroke:'+colorVar+'; stroke-width:2.5; stroke-linejoin:round; stroke-linecap:round;"/>');
-
-  pts.forEach(function(p, idx){
-    var isSelected = p.d.ym === selectedMonth;
-    var label = key === "ing" ? "Ingresos" : "Gastos";
-    var tipTxt = monthLabel(p.d.ym) + " · " + label + " " + fmt(p.d[key]) + " · tocá para ver el detalle";
-    parts.push('<circle class="pt-hover" data-ym="'+p.d.ym+'" data-tip="'+escapeHtml(tipTxt)+'" cx="'+p.x.toFixed(1)+'" cy="'+p.y.toFixed(1)+'" r="'+(isSelected?6:4.5)+'" style="fill:'+colorVar+'; stroke:var(--surface); stroke-width:2;"/>');
-    if(p.d[key] > 0){
-      parts.push('<text x="'+p.x.toFixed(1)+'" y="'+(p.y-11).toFixed(1)+'" text-anchor="middle" style="font:600 10px var(--font-mono); fill:var(--ink-muted);">'+fmtK(p.d[key])+'</text>');
-    }
-    parts.push('<text x="'+p.x.toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" style="font:'+(isSelected?"700":"600")+' 11px var(--font-body); fill:'+(isSelected?"var(--ink)":"var(--ink-faint)")+';">'+escapeHtml(monthAbbrev(p.d.ym))+'</text>');
+    parts.push('<text x="'+x.toFixed(1)+'" y="'+(H-8)+'" text-anchor="middle" style="font:'+(isSelected?"700":"600")+' 11px var(--font-body); fill:'+(isSelected?"var(--ink)":"var(--ink-faint)")+';">'+escapeHtml(monthAbbrev(d.ym))+'</text>');
   });
 
   svg.innerHTML = parts.join("");
@@ -1713,8 +1716,7 @@ function renderPolygonChart(svgId, data, key, colorVar){
 
 function renderIncomeExpenseTrends(){
   var data = computeTrendData();
-  renderPolygonChart("ingreso-trend-chart", data, "ing", "var(--ingreso-total)");
-  renderPolygonChart("gasto-trend-chart", data, "gas", "var(--gasto-total)");
+  renderDualPolygonChart("ingreso-gasto-trend-chart", data);
 }
 
 function goToMonthDetail(ym){
