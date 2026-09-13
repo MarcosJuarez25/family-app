@@ -1188,7 +1188,7 @@ function makeTransactionsCollection(){
     add: function(data){
       var row = { type:data.type, category_id:data.categoryId, amount:data.amount, author:data.author, note:data.note, date:data.date };
       if("cardId" in data) row.card_id = data.cardId;
-      return sb.from("transactions").insert(row).then(function(res){ if(res.error) throw res.error; });
+      return sb.from("transactions").insert(row).then(function(res){ if(res.error) throw res.error; fetchAndNotify(); });
     },
     doc: function(id){
       return {
@@ -1201,10 +1201,10 @@ function makeTransactionsCollection(){
           if("note" in data) row.note = data.note;
           if("date" in data) row.date = data.date;
           if("cardId" in data) row.card_id = data.cardId;
-          return sb.from("transactions").update(row).eq("id", id).then(function(res){ if(res.error) throw res.error; });
+          return sb.from("transactions").update(row).eq("id", id).then(function(res){ if(res.error) throw res.error; fetchAndNotify(); });
         },
         delete: function(){
-          return sb.from("transactions").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; });
+          return sb.from("transactions").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; fetchAndNotify(); });
         }
       };
     }
@@ -1244,7 +1244,7 @@ function makeCardInstallmentsCollection(){
     onSnapshot: function(cb, err){ listeners.push({cb:cb, err:err}); fetchAndNotify(); return function(){}; },
     add: function(data){
       var row = { description:data.description, installment_amount:data.installmentAmount, total_installments:data.totalInstallments, paid_installments:0, author:data.author };
-      return sb.from("card_installments").insert(row).then(function(res){ if(res.error) throw res.error; });
+      return sb.from("card_installments").insert(row).then(function(res){ if(res.error) throw res.error; fetchAndNotify(); });
     },
     doc: function(id){
       return {
@@ -1253,17 +1253,17 @@ function makeCardInstallmentsCollection(){
             if(res.error) throw res.error;
             var next = (res.data ? res.data.paid_installments : 0) + 1;
             return sb.from("card_installments").update({paid_installments: next}).eq("id", id);
-          }).then(function(res){ if(res && res.error) throw res.error; });
+          }).then(function(res){ if(res && res.error) throw res.error; fetchAndNotify(); });
         },
         decrementPaid: function(){
           return sb.from("card_installments").select("paid_installments").eq("id", id).maybeSingle().then(function(res){
             if(res.error) throw res.error;
             var next = Math.max(0, (res.data ? res.data.paid_installments : 0) - 1);
             return sb.from("card_installments").update({paid_installments: next}).eq("id", id);
-          }).then(function(res){ if(res && res.error) throw res.error; });
+          }).then(function(res){ if(res && res.error) throw res.error; fetchAndNotify(); });
         },
         delete: function(){
-          return sb.from("card_installments").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; });
+          return sb.from("card_installments").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; fetchAndNotify(); });
         }
       };
     }
