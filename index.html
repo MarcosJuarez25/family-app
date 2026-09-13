@@ -1120,8 +1120,18 @@ function txFromRow(row){
     author: row.author,
     note: row.note,
     date: row.date,
+    cardId: row.card_id != null ? row.card_id : null,
     createdAt: row.created_at ? new Date(row.created_at).getTime() : 0
   };
+}
+
+function sortedPendingCards(){
+  return cardInstallments.filter(function(c){ return c.paidInstallments < c.totalInstallments; }).slice().sort(function(a,b){
+    var remA = a.totalInstallments - a.paidInstallments;
+    var remB = b.totalInstallments - b.paidInstallments;
+    if(remA !== remB) return remA - remB;
+    return (a.description||"").localeCompare(b.description||"");
+  });
 }
 
 function makeSettingsDoc(){
@@ -1177,6 +1187,7 @@ function makeTransactionsCollection(){
     onSnapshot: function(cb, err){ listeners.push({cb:cb, err:err}); fetchAndNotify(); return function(){}; },
     add: function(data){
       var row = { type:data.type, category_id:data.categoryId, amount:data.amount, author:data.author, note:data.note, date:data.date };
+      if("cardId" in data) row.card_id = data.cardId;
       return sb.from("transactions").insert(row).then(function(res){ if(res.error) throw res.error; });
     },
     doc: function(id){
@@ -1189,6 +1200,7 @@ function makeTransactionsCollection(){
           if("author" in data) row.author = data.author;
           if("note" in data) row.note = data.note;
           if("date" in data) row.date = data.date;
+          if("cardId" in data) row.card_id = data.cardId;
           return sb.from("transactions").update(row).eq("id", id).then(function(res){ if(res.error) throw res.error; });
         },
         delete: function(){
@@ -1240,6 +1252,13 @@ function makeCardInstallmentsCollection(){
           return sb.from("card_installments").select("paid_installments").eq("id", id).maybeSingle().then(function(res){
             if(res.error) throw res.error;
             var next = (res.data ? res.data.paid_installments : 0) + 1;
+            return sb.from("card_installments").update({paid_installments: next}).eq("id", id);
+          }).then(function(res){ if(res && res.error) throw res.error; });
+        },
+        decrementPaid: function(){
+          return sb.from("card_installments").select("paid_installments").eq("id", id).maybeSingle().then(function(res){
+            if(res.error) throw res.error;
+            var next = Math.max(0, (res.data ? res.data.paid_installments : 0) - 1);
             return sb.from("card_installments").update({paid_installments: next}).eq("id", id);
           }).then(function(res){ if(res && res.error) throw res.error; });
         },
@@ -1539,7 +1558,7 @@ function renderQuickGastoChips(){
       function(){ renderQuickGastoChips(); }
     );
   });
-  cardInstallments.filter(function(c){ return c.paidInstallments < c.totalInstallments; }).forEach(function(c){
+  sortedPendingCards().forEach(function(c){
     var chip = document.createElement("div");
     chip.className = "chip chip-installment";
     var chipLabel = c.description + " " + c.paidInstallments + "/" + c.totalInstallments;
@@ -2290,6 +2309,18 @@ function renderChipCats(){
       chip.classList.add("active");
     });
   });
+  if(currentType === "gasto" && !editingTxId){
+    sortedPendingCards().forEach(function(c){
+      var chip = document.createElement("div");
+      chip.className = "chip chip-installment";
+      var chipLabel = c.description + " " + c.paidInstallments + "/" + c.totalInstallments;
+      chip.innerHTML = '<span class="dot" style="background:var(--c-tarjeta)">'+escapeHtml(catInitial(c.description))+'</span>'+escapeHtml(chipLabel);
+      chip.addEventListener("click", function(){
+        openPayInstallmentSheet(c, sheetTx);
+      });
+      wrap.appendChild(chip);
+    });
+  }
   if(selectedCatId){
     var match = wrap.querySelector('.chip[data-id="'+selectedCatId+'"]');
     if(match) match.classList.add("active");
@@ -2417,7 +2448,7 @@ document.getElementById("btn-future-total").addEventListener("click", function()
 
 /* ---------- pay one installment sheet ---------- */
 var payingInstallment = null;
-function openPayInstallmentSheet(c){
+function openPayInstallmentSheet(c, fromSheet){
   payingInstallment = c;
   document.getElementById("pay-installment-info").innerHTML =
     '<div style="font-weight:600; font-size:16px; margin-bottom:4px;">'+escapeHtml(c.description)+'</div>' +
@@ -2425,7 +2456,12 @@ function openPayInstallmentSheet(c){
   document.getElementById("input-pay-installment-date").value = todayISO();
   if(!selectedAuthor) selectedAuthor = (settings.authors||[])[0];
   renderAuthorRow("pay-installment-author-row");
-  openSheet(sheetPayInstallment);
+  if(fromSheet){
+    fromSheet.classList.remove("show");
+    sheetPayInstallment.classList.add("show");
+  } else {
+    openSheet(sheetPayInstallment);
+  }
 }
 document.getElementById("btn-close-pay-installment").addEventListener("click", closeSheets);
 document.getElementById("btn-confirm-pay-installment").addEventListener("click", function(){
@@ -2439,6 +2475,7 @@ document.getElementById("btn-confirm-pay-installment").addEventListener("click",
     author: selectedAuthor || (settings.authors||[])[0],
     note: c.description + " (cuota " + (c.paidInstallments+1) + "/" + c.totalInstallments + ")",
     date: date,
+    cardId: c.id,
     createdAt: Date.now()
   };
   db.collection("transactions").add(data).catch(function(err){ console.error(err); });
@@ -2507,7 +2544,12 @@ document.getElementById("btn-save-tx").addEventListener("click", function(){
 
 document.getElementById("btn-delete-tx").addEventListener("click", function(){
   if(!editingTxId) return;
-  db.collection("transactions").doc(editingTxId).delete().catch(function(err){ console.error(err); });
+  var tx = allTx.find(function(t){ return t.id === editingTxId; });
+  db.collection("transactions").doc(editingTxId).delete().then(function(){
+    if(tx && tx.cardId){
+      return db.collection("card_installments").doc(tx.cardId).decrementPaid();
+    }
+  }).catch(function(err){ console.error(err); });
   closeSheets();
 });
 
