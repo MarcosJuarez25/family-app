@@ -1281,12 +1281,12 @@ function makeFutureExpensesCollection(){
     onSnapshot: function(cb, err){ listeners.push({cb:cb, err:err}); fetchAndNotify(); return function(){}; },
     add: function(data){
       var row = { description:data.description, amount:data.amount };
-      return sb.from("future_expenses").insert(row).then(function(res){ if(res.error) throw res.error; });
+      return sb.from("future_expenses").insert(row).then(function(res){ if(res.error) throw res.error; fetchAndNotify(); });
     },
     doc: function(id){
       return {
         delete: function(){
-          return sb.from("future_expenses").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; });
+          return sb.from("future_expenses").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; fetchAndNotify(); });
         }
       };
     }
