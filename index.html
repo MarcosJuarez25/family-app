@@ -374,6 +374,35 @@ button{font-family:inherit;}
 }
 .btn-add-card:hover{ background:color-mix(in srgb, var(--c-tarjeta) 8%, var(--surface)); }
 .chip.chip-installment{border-color:color-mix(in srgb, var(--c-tarjeta) 45%, var(--line));}
+
+/* future expenses (planned, not yet incurred) */
+.future-list{display:flex; flex-direction:column; gap:12px; padding:18px;}
+.future-row{display:flex; align-items:center; gap:10px;}
+.future-row-name{font-weight:600; font-size:14px; color:var(--ink); flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;}
+.future-row-amt{font-family:var(--font-mono); font-weight:600; color:var(--ink); flex:none;}
+.btn-add-future{
+  display:block; width:calc(100% - 36px); margin:10px 18px 10px;
+  padding:11px;
+  border-radius:var(--radius-md); border:1.5px dashed color-mix(in srgb, var(--accent) 55%, var(--line));
+  background:var(--surface); color:var(--accent); font-weight:600; font-size:13.5px; cursor:pointer; font-family:inherit;
+}
+.btn-add-future:hover{ background:color-mix(in srgb, var(--accent) 8%, var(--surface)); }
+.future-total-btn{
+  display:block; width:calc(100% - 36px); margin:0 18px 18px;
+  padding:11px;
+  border-radius:var(--radius-md); border:1px solid var(--line);
+  background:var(--surface); color:var(--ink); font-weight:600; font-size:13.5px; cursor:pointer; font-family:inherit;
+}
+.future-total-btn:hover{border-color:color-mix(in srgb, var(--accent) 40%, var(--line));}
+.future-total-result{
+  margin:0 18px 18px; padding:14px 16px;
+  border-radius:var(--radius-md);
+  background:color-mix(in srgb, var(--accent) 10%, var(--surface));
+  border:1px solid color-mix(in srgb, var(--accent) 30%, var(--line));
+}
+.future-total-label{font-size:12px; color:var(--ink-muted); font-weight:600;}
+.future-total-amt{font-family:var(--font-mono); font-weight:700; font-size:22px; color:var(--ink); margin-top:2px;}
+.future-total-sub{font-size:11.5px; color:var(--ink-muted); margin-top:6px; line-height:1.5;}
 .btn-load-more{
   display:block; width:100%; margin-top:10px; padding:12px;
   border-radius:var(--radius-md); border:1px solid var(--line); background:var(--surface);
@@ -675,6 +704,19 @@ body.no-scroll{overflow:hidden;}
     </div>
   </div>
 
+  <div class="section" id="future-expenses-section">
+    <div class="section-head">
+      <div class="section-title">Futuros gastos</div>
+      <div class="section-sub">planificados, todavía sin cargar</div>
+    </div>
+    <div class="card">
+      <div class="future-list" id="future-expenses-list"></div>
+      <button type="button" class="btn-add-future" id="btn-add-future">+ Nuevo gasto futuro</button>
+      <button type="button" class="future-total-btn" id="btn-future-total">Calcular total (incluye cuotas pendientes)</button>
+      <div class="future-total-result" id="future-total-result" hidden></div>
+    </div>
+  </div>
+
   <div class="section" id="cat-breakdown-section">
     <div class="section-head">
       <div class="section-title">Gastos por categoría</div>
@@ -840,6 +882,30 @@ body.no-scroll{overflow:hidden;}
   </div>
 </div>
 
+<!-- New future expense sheet -->
+<div class="sheet" id="sheet-future-expense">
+  <div class="sheet-grabber"></div>
+  <div class="sheet-head">
+    <div class="sheet-title">Nuevo gasto futuro</div>
+    <button class="icon-btn" id="btn-close-future-expense" aria-label="Cerrar">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>
+    </button>
+  </div>
+
+  <div class="field-label">Descripción</div>
+  <input class="text-input" id="input-future-desc" type="text" placeholder="Ej: Arreglar el techo, Aire acondicionado...">
+
+  <div class="field-label">Monto estimado</div>
+  <div class="amount-input-wrap">
+    <span class="amount-currency">$</span>
+    <input class="amount-input" id="input-future-amount" inputmode="decimal" placeholder="0" type="text">
+  </div>
+
+  <div class="btn-row">
+    <button class="btn btn-primary" id="btn-save-future" style="width:100%;">Guardar</button>
+  </div>
+</div>
+
 <!-- Pay one installment sheet -->
 <div class="sheet" id="sheet-pay-installment">
   <div class="sheet-grabber"></div>
@@ -981,6 +1047,7 @@ var db = null;
 var settings = null;
 var allTx = [];
 var cardInstallments = [];
+var futureExpenses = [];
 var selectedMonth = ymKey(new Date());
 var TX_LIST_PREVIEW = 10;
 var editingTxId = null;
@@ -1185,8 +1252,50 @@ function makeCardInstallmentsCollection(){
   return api;
 }
 
+function futureExpenseFromRow(row){
+  return {
+    id: row.id,
+    description: row.description,
+    amount: Number(row.amount),
+    createdAt: row.created_at ? new Date(row.created_at).getTime() : 0
+  };
+}
+
+function makeFutureExpensesCollection(){
+  var listeners = [];
+  function fetchAndNotify(){
+    sb.from("future_expenses").select("*").order("created_at", {ascending:true}).then(function(res){
+      if(res.error){ listeners.forEach(function(l){ if(l.err) l.err(res.error); }); return; }
+      var docs = (res.data||[]).map(function(row){
+        var item = futureExpenseFromRow(row);
+        return { id: row.id, exists:true, data:function(){ return item; } };
+      });
+      var snap = { docs: docs };
+      listeners.forEach(function(l){ l.cb(snap); });
+    });
+  }
+  sb.channel("future_expenses_changes")
+    .on("postgres_changes", {event:"*", schema:"public", table:"future_expenses"}, fetchAndNotify)
+    .subscribe();
+  var api = {
+    onSnapshot: function(cb, err){ listeners.push({cb:cb, err:err}); fetchAndNotify(); return function(){}; },
+    add: function(data){
+      var row = { description:data.description, amount:data.amount };
+      return sb.from("future_expenses").insert(row).then(function(res){ if(res.error) throw res.error; });
+    },
+    doc: function(id){
+      return {
+        delete: function(){
+          return sb.from("future_expenses").delete().eq("id", id).then(function(res){ if(res.error) throw res.error; });
+        }
+      };
+    }
+  };
+  return api;
+}
+
 /* ---------- db ---------- */
-var settingsDocApi = null, txCollectionApi = null, cardCollectionApi = null;
+var settingsDocApi = null, txCollectionApi = null, cardCollectionApi = null, futureCollectionApi = null;
 async function initDb(){
   if(!sb){
     document.getElementById("app").innerHTML = '<div style="padding:60px 20px; text-align:center; color:var(--ink-muted); font-size:14px; line-height:1.6;">No se pudo conectar con el almacenamiento de esta página.<br>Probá recargarla en unos segundos.</div>';
@@ -1195,11 +1304,13 @@ async function initDb(){
   settingsDocApi = makeSettingsDoc();
   txCollectionApi = makeTransactionsCollection();
   cardCollectionApi = makeCardInstallmentsCollection();
+  futureCollectionApi = makeFutureExpensesCollection();
   db = {
     doc: function(path){ return path === "settings/config" ? settingsDocApi : null; },
     collection: function(name){
       if(name === "transactions") return txCollectionApi;
       if(name === "card_installments") return cardCollectionApi;
+      if(name === "future_expenses") return futureCollectionApi;
       return null;
     }
   };
@@ -1236,7 +1347,14 @@ async function initDb(){
   db.collection("card_installments").onSnapshot(function(snap){
     cardInstallments = snap.docs.map(function(d){ return d.data(); });
     renderAll();
+    var resultEl = document.getElementById("future-total-result");
+    if(resultEl && !resultEl.hidden) renderFutureTotal();
   }, function(err){ console.error("card_installments error", err); });
+
+  db.collection("future_expenses").onSnapshot(function(snap){
+    futureExpenses = snap.docs.map(function(d){ return d.data(); });
+    renderFutureExpenses();
+  }, function(err){ console.error("future_expenses error", err); });
 }
 
 var __shortcutHandled = false;
@@ -1716,6 +1834,52 @@ function renderCardInstallments(){
   });
 }
 
+
+/* ---------- future expenses (planned, not yet incurred) ---------- */
+function renderFutureExpenses(){
+  var list = document.getElementById("future-expenses-list");
+  if(!list) return;
+  if(futureExpenses.length === 0){
+    list.innerHTML = '<div class="empty-note">Todavía no planificaste gastos futuros.</div>';
+  } else {
+    var sorted = futureExpenses.slice().sort(function(a,b){ return (b.createdAt||0) - (a.createdAt||0); });
+    list.innerHTML = sorted.map(function(f){
+      return (
+        '<div class="future-row" data-id="'+f.id+'">' +
+          '<div class="future-row-name">'+escapeHtml(f.description)+'</div>' +
+          '<div class="future-row-amt">'+fmt(f.amount)+'</div>' +
+          '<button type="button" class="card-row-del" data-id="'+f.id+'" aria-label="Eliminar">&times;</button>' +
+        '</div>'
+      );
+    }).join("");
+    list.querySelectorAll(".card-row-del").forEach(function(btn){
+      btn.addEventListener("click", function(e){
+        e.stopPropagation();
+        var id = btn.dataset.id;
+        if(window.confirm("¿Eliminar este gasto futuro?")){
+          db.collection("future_expenses").doc(id).delete().catch(function(err){ console.error(err); });
+        }
+      });
+    });
+  }
+  var resultEl = document.getElementById("future-total-result");
+  if(resultEl && !resultEl.hidden) renderFutureTotal();
+}
+
+function renderFutureTotal(){
+  var resultEl = document.getElementById("future-total-result");
+  if(!resultEl) return;
+  var futureTotal = futureExpenses.reduce(function(s,f){ return s + (f.amount||0); }, 0);
+  var pendingCards = cardInstallments.filter(function(c){ return c.paidInstallments < c.totalInstallments; });
+  var cardsRemainingCount = pendingCards.reduce(function(s,c){ return s + (c.totalInstallments - c.paidInstallments); }, 0);
+  var cardsTotal = pendingCards.reduce(function(s,c){ return s + (c.totalInstallments - c.paidInstallments) * c.installmentAmount; }, 0);
+  var grandTotal = futureTotal + cardsTotal;
+  resultEl.innerHTML =
+    '<div class="future-total-label">Total estimado</div>' +
+    '<div class="future-total-amt">'+fmt(grandTotal)+'</div>' +
+    '<div class="future-total-sub">Gastos futuros: '+fmt(futureTotal)+' · Cuotas de tarjeta pendientes: '+fmt(cardsTotal)+' ('+cardsRemainingCount+' '+(cardsRemainingCount===1?"cuota":"cuotas")+')</div>';
+}
+
 /* ---------- category breakdown ---------- */
 function renderCatBreakdown(mtx){
   var list = document.getElementById("cat-list");
@@ -2041,6 +2205,7 @@ var scrim = document.getElementById("scrim");
 var sheetTx = document.getElementById("sheet-tx");
 var sheetSettings = document.getElementById("sheet-settings");
 var sheetCard = document.getElementById("sheet-card");
+var sheetFutureExpense = document.getElementById("sheet-future-expense");
 var sheetPayInstallment = document.getElementById("sheet-pay-installment");
 
 /* ---------- overlay/back-button stack ----------
@@ -2085,11 +2250,13 @@ function closeSheetsVisual(){
   sheetTx.classList.remove("show");
   sheetSettings.classList.remove("show");
   sheetCard.classList.remove("show");
+  sheetFutureExpense.classList.remove("show");
   sheetPayInstallment.classList.remove("show");
 }
 function closeSheets(){
   var wasOpen = sheetTx.classList.contains("show") || sheetSettings.classList.contains("show") ||
-    sheetCard.classList.contains("show") || sheetPayInstallment.classList.contains("show");
+    sheetCard.classList.contains("show") || sheetFutureExpense.classList.contains("show") ||
+    sheetPayInstallment.classList.contains("show");
   closeSheetsVisual();
   if(wasOpen) popOverlay("sheet", false);
 }
@@ -2211,6 +2378,41 @@ document.getElementById("btn-save-card").addEventListener("click", function(){
     author: selectedAuthor || (settings.authors||[])[0]
   }).catch(function(err){ console.error(err); });
   closeSheets();
+});
+
+/* ---------- new future expense sheet ---------- */
+function openNewFutureExpenseSheet(){
+  document.getElementById("input-future-desc").value = "";
+  document.getElementById("input-future-amount").value = "";
+  openSheet(sheetFutureExpense);
+  setTimeout(function(){ document.getElementById("input-future-desc").focus(); }, 250);
+}
+document.getElementById("btn-add-future").addEventListener("click", openNewFutureExpenseSheet);
+document.getElementById("btn-close-future-expense").addEventListener("click", closeSheets);
+document.getElementById("input-future-amount").addEventListener("input", function(e){
+  var v = e.target.value.replace(/[^0-9.,]/g, "");
+  e.target.value = v;
+});
+document.getElementById("btn-save-future").addEventListener("click", function(){
+  var desc = document.getElementById("input-future-desc").value.trim();
+  var rawAmount = document.getElementById("input-future-amount").value.replace(",", ".");
+  var amount = parseFloat(rawAmount);
+  if(!desc){ flashInvalid("input-future-desc"); return; }
+  if(!amount || amount <= 0){ flashInvalid("input-future-amount"); return; }
+  db.collection("future_expenses").add({
+    description: desc,
+    amount: amount
+  }).catch(function(err){ console.error(err); });
+  closeSheets();
+});
+
+document.getElementById("btn-future-total").addEventListener("click", function(){
+  var resultEl = document.getElementById("future-total-result");
+  var btn = document.getElementById("btn-future-total");
+  var show = resultEl.hidden;
+  resultEl.hidden = !show;
+  btn.textContent = show ? "Ocultar total" : "Calcular total (incluye cuotas pendientes)";
+  if(show) renderFutureTotal();
 });
 
 /* ---------- pay one installment sheet ---------- */
